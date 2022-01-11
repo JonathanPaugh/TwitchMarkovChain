@@ -1,4 +1,5 @@
-
+from threading import Timer
+from random import randint, random
 from typing import List, Tuple
 
 from TwitchWebsocket import Message, TwitchWebsocket
@@ -33,14 +34,14 @@ class MarkovChain:
         if self.help_message_timer > 0:
             if self.help_message_timer < 300:
                 raise ValueError("Value for \"HelpMessageTimer\" in must be at least 300 seconds, or a negative number for no help messages.")
-            t = LoopingTimer(self.help_message_timer, self.send_help_message)
+            t = LoopingTimer(self.get_help_interval, self.send_help_message)
             t.start()
         
         # Set up daemon Timer to send automatic generation messages
-        if self.automatic_generation_timer > 0:
-            if self.automatic_generation_timer < 30:
-                raise ValueError("Value for \"AutomaticGenerationMessage\" in must be at least 30 seconds, or a negative number for no automatic generations.")
-            t = LoopingTimer(self.automatic_generation_timer, self.send_automatic_generation_message)
+        if self.automatic_generation_timer_min > 0:
+            if self.automatic_generation_timer_max < self.automatic_generation_timer_min:
+                raise ValueError("Value for \"AutomaticGenerationMessageMax\" in must be equal or greater than \"AutomaticGenerationMessageMin\".")
+            t = LoopingTimer(self.get_automatic_generation_interval, self.send_automatic_generation_message)
             t.start()
 
         self.ws = TwitchWebsocket(host=self.host, 
@@ -52,6 +53,12 @@ class MarkovChain:
                                   capability=["commands", "tags"],
                                   live=True)
         self.ws.start_bot()
+
+    def get_help_interval(self):
+        return self.help_message_timer
+
+    def get_automatic_generation_interval(self):
+        return randint(self.automatic_generation_timer_min, self.automatic_generation_timer_max)
 
     def set_settings(self, settings: SettingsData):
         """Fill class instance attributes based on the settings file.
@@ -71,7 +78,10 @@ class MarkovChain:
         self.max_sentence_length = settings["MaxSentenceWordAmount"]
         self.min_sentence_length = settings["MinSentenceWordAmount"]
         self.help_message_timer = settings["HelpMessageTimer"]
-        self.automatic_generation_timer = settings["AutomaticGenerationTimer"]
+        self.automatic_generation_timer_min = settings["AutomaticGenerationTimerMin"]
+        self.automatic_generation_timer_max = settings["AutomaticGenerationTimerMax"]
+        self.automatic_generation_chain_chance = settings["AutomaticGenerationChainChance"]
+        self.automatic_generation_chain_timer = settings["AutomaticGenerationChainTimer"]
         self.whisper_cooldown = settings["WhisperCooldown"]
         self.enable_generate_command = settings["EnableGenerateCommand"]
         self.sent_separator = settings["SentenceSeparator"]
@@ -313,6 +323,7 @@ class MarkovChain:
             Tuple[str, bool]: A tuple of a sentence as the first value, and a boolean indicating
                 whether the generation succeeded as the second value.
         """
+
         if params is None:
             params = []
 
@@ -341,7 +352,7 @@ class MarkovChain:
                 key = self.db.get_next_single_initial(0, params[0])
                 if key == None:
                     # Return a message that this word hasn't been learned yet
-                    return f"I haven't extracted \"{params[0]}\" from chat yet.", False
+                    return f"I am too Pepega to understand that right now.", False
             # Copy this for the sentence
             sentences[0] = key.copy()
 
@@ -475,15 +486,21 @@ class MarkovChain:
         """
         if self._enabled:
             sentence, success = self.generate()
+
             if success:
                 logger.info(sentence)
                 # Try to send a message. Just log a warning on fail
+
                 try:
                     self.ws.send_message(sentence)
+
                 except socket.OSError as error:
                     logger.warning(f"[OSError: {error}] upon sending automatic generation message. Ignoring.")
             else:
                 logger.info("Attempted to output automatic generation message, but there is not enough learned information yet.")
+
+            if random() < self.automatic_generation_chain_chance:
+                Timer(self.automatic_generation_chain_timer, self.send_automatic_generation_message).start()
 
     def send_whisper(self, user: str, message: str) -> None:
         """Optionally send a whisper, only if "WhisperCooldown" is True.

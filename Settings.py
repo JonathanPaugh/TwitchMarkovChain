@@ -43,7 +43,10 @@ class Settings:
         "MaxSentenceWordAmount": 25,
         "MinSentenceWordAmount": -1,
         "HelpMessageTimer": 60 * 60 * 5, # 18000 seconds, 5 hours
-        "AutomaticGenerationTimer": -1,
+        "AutomaticGenerationTimerMin": -1,
+        "AutomaticGenerationTimerMax": -1,
+        "AutomaticGenerationChainChance": 0.5,
+        "AutomaticGenerationChainTimer": 5,
         "WhisperCooldown": True,
         "EnableGenerateCommand": True,
         "SentenceSeparator": " - ",
